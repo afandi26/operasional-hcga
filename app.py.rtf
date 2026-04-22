@@ -1,0 +1,91 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2867
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 import streamlit as st\
+import pandas as pd\
+from datetime import datetime\
+import os\
+\
+# --- KONFIGURASI DATABASE ---\
+DB_FILE = "data_pengeluaran_hcga.csv"\
+\
+def load_data():\
+    if os.path.exists(DB_FILE):\
+        return pd.read_csv(DB_FILE)\
+    else:\
+        return pd.DataFrame(columns=["Tanggal", "PIC", "Keperluan", "Dana_Awal", "Total_Belanja", "Sisa", "Status"])\
+\
+def save_data(df):\
+    df.to_csv(DB_FILE, index=False)\
+\
+# --- UI APP ---\
+st.set_page_config(page_title="HC-GA Petty Cash", layout="wide")\
+st.title("\uc0\u55357 \u56496  Sistem Pengeluaran Operasional HC & GA")\
+\
+menu = ["Input Tim (Harian)", "Persetujuan Manager", "Rekap & Ekspor"]\
+choice = st.sidebar.selectbox("Navigasi", menu)\
+\
+df = load_data()\
+\
+# --- MENU 1: INPUT OLEH TIM ---\
+if choice == "Input Tim (Harian)":\
+    st.subheader("\uc0\u55357 \u56541  Input Pengeluaran Baru")\
+    with st.form("form_input"):\
+        col1, col2 = st.columns(2)\
+        with col1:\
+            pic = st.selectbox("Nama Tim", ["Tim A", "Tim B"])\
+            keperluan = st.text_input("Keperluan (Contoh: Beli Buah/Sabun)")\
+        with col2:\
+            dana_awal = st.number_input("Dana yang Diberikan Manager (Rp)", min_value=0, step=1000)\
+            total_belanja = st.number_input("Total Pengeluaran sesuai Nota (Rp)", min_value=0, step=1000)\
+        \
+        submit = st.form_submit_button("Kirim Laporan")\
+        \
+        if submit:\
+            sisa = dana_awal - total_belanja\
+            new_data = \{\
+                "Tanggal": datetime.now().strftime("%Y-%m-%d %H:%M"),\
+                "PIC": pic,\
+                "Keperluan": keperluan,\
+                "Dana_Awal": dana_awal,\
+                "Total_Belanja": total_belanja,\
+                "Sisa": sisa,\
+                "Status": "Pending"\
+            \}\
+            df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)\
+            save_data(df)\
+            st.success(f"Laporan berhasil dikirim! Sisa uang: Rp\{sisa:,\}")\
+\
+# --- MENU 2: PERSETUJUAN MANAGER (ANDA) ---\
+elif choice == "Persetujuan Manager":\
+    st.subheader("\uc0\u55357 \u56693 \u65039  Verifikasi Pengeluaran Tim")\
+    pending_df = df[df["Status"] == "Pending"]\
+    \
+    if pending_df.empty:\
+        st.info("Semua laporan sudah diverifikasi.")\
+    else:\
+        st.write("Daftar laporan yang perlu dicek:")\
+        st.dataframe(pending_df, use_container_width=True)\
+        \
+        if st.button("Verifikasi & Approve Semua"):\
+            df["Status"] = "Approved"\
+            save_data(df)\
+            st.success("Semua data berhasil diverifikasi!")\
+\
+# --- MENU 3: REKAP & EKSPOR ---\
+elif choice == "Rekap & Ekspor":\
+    st.subheader("\uc0\u55357 \u56522  Rekapitulasi Global")\
+    st.dataframe(df, use_container_width=True)\
+    \
+    # Tombol Download Excel\
+    csv = df.to_csv(index=False).encode('utf-8')\
+    st.download_button(\
+        label="Download Laporan untuk Accounting (CSV)",\
+        data=csv,\
+        file_name=f"laporan_hcga_\{datetime.now().strftime('%Y%m%d')\}.csv",\
+        mime='text/csv',\
+    )}
