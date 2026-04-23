@@ -12,7 +12,7 @@ def load_data():
             return pd.read_csv(DB_FILE)
         except:
             pass
-    return pd.DataFrame(columns=["Tanggal", "PIC", "Keperluan", "Dana_Awal", "Total_Belanja", "Sisa", "Status"])
+    return pd.DataFrame(columns=["Tanggal", "PIC", "Keperluan", "Dana_Awal", "Harga_Satuan", "Status"])
 
 st.set_page_config(page_title="HC-GA Operasional", layout="wide")
 st.title("💰 Sistem Pengeluaran HC & GA")
@@ -24,7 +24,6 @@ df = load_data()
 if choice == "Input Tim (Multi-Item)":
     st.subheader("📝 Form Pengeluaran Bertahap")
     
-    # PERBAIKAN: Input modal diletakkan di luar form agar lebih stabil
     pic = st.selectbox("Nama Tim", ["Tim A", "Tim B"])
     dana_modal = st.number_input("Total Dana yang Diterima dari Manager (Rp)", min_value=0, step=1000, key="modal_input")
 
@@ -60,54 +59,67 @@ if choice == "Input Tim (Multi-Item)":
         col_m1.metric("Total Belanja", f"Rp{total_terpakai:,}")
         col_m2.metric("Sisa Saldo Uang", f"Rp{sisa_sekarang:,}")
 
-        # PERBAIKAN: Validasi Modal sebelum kirim
         if st.button("🚀 Kirim Laporan ke Manager", use_container_width=True):
             if dana_modal <= 0:
-                st.error("Gagal! Anda belum mengisi 'Total Dana yang Diterima' di Langkah 1.")
+                st.error("Gagal! Anda belum mengisi 'Total Dana yang Diterima'.")
             else:
-                semua_barang = ", ".join([i["Barang"] for i in st.session_state.items_list])
-                new_row = {
-                    "Tanggal": datetime.now().strftime("%Y-%m-%d"),
-                    "PIC": pic, "Keperluan": semua_barang, "Dana_Awal": dana_modal,
-                    "Total_Belanja": total_terpakai, "Sisa": sisa_sekarang, "Status": "Pending"
-                }
-                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                # PERBAIKAN: Simpan setiap barang sebagai baris baru
+                new_rows = []
+                for i in st.session_state.items_list:
+                    new_rows.append({
+                        "Tanggal": datetime.now().strftime("%Y-%m-%d"),
+                        "PIC": pic, 
+                        "Keperluan": i["Barang"], 
+                        "Dana_Awal": dana_modal,
+                        "Harga_Satuan": i["Harga"], 
+                        "Status": "Pending"
+                    })
+                
+                df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 df.to_csv(DB_FILE, index=False)
                 st.session_state.items_list = []
-                st.success("Laporan Berhasil Terkirim!")
-                st.balloons()
+                st.success("Laporan Terinci Berhasil Terkirim!")
                 st.rerun()
 
 elif choice == "Dashboard Manager":
     st.subheader("🕵️ Dashboard Verifikasi")
     if not df.empty:
-        pending_data = df[df["Status"] == "Pending"]
-        if pending_data.empty:
-            st.info("Tidak ada laporan baru yang perlu dicek.")
+        # Menampilkan barang yang butuh approval (dikelompokkan per PIC & Tanggal agar tidak berantakan)
+        pending_items = df[df["Status"] == "Pending"]
         
-        for index, row in df.iterrows():
-            if row["Status"] == "Pending":
-                with st.container():
-                    st.write(f"**Tanggal:** {row['Tanggal']} | **PIC:** {row['PIC']}")
-                    st.write(f"**Barang:** {row['Keperluan']}")
-                    col_a, col_b, col_c = st.columns(3)
-                    col_a.write(f"**Modal:** Rp{row['Dana_Awal']:,}")
-                    col_b.write(f"**Belanja:** Rp{row['Total_Belanja']:,}")
-                    col_c.write(f"**Sisa:** Rp{row['Sisa']:,}")
-                    
-                    b1, b2 = st.columns([1, 5])
-                    if b1.button("✅ Approve", key=f"app_{index}"):
-                        df.at[index, "Status"] = "Approved"
-                        df.to_csv(DB_FILE, index=False)
-                        st.rerun()
-                    if b2.button("❌ Tolak (Hapus)", key=f"rej_{index}"):
-                        df.drop(index, inplace=True)
-                        df.to_csv(DB_FILE, index=False)
-                        st.rerun()
+        if not pending_items.empty:
+            for pic_name in pending_items["PIC"].unique():
+                st.write(f"### Laporan dari {pic_name}")
+                pic_df = pending_items[pending_items["PIC"] == pic_name]
+                
+                # Tampilkan tabel ringkas untuk yang sedang di-review
+                st.table(pic_df[["Keperluan", "Harga_Satuan"]])
+                
+                total_pic = pic_df["Harga_Satuan"].sum()
+                modal_pic = pic_df["Dana_Awal"].iloc[0]
+                st.write(f"**Total Belanja:** Rp{total_pic:,} | **Modal:** Rp{modal_pic:,} | **Sisa:** Rp{modal_pic - total_pic:,}")
+                
+                b1, b2 = st.columns([1, 5])
+                if b1.button(f"✅ Approve Semua dari {pic_name}", key=f"app_{pic_name}"):
+                    df.loc[(df["PIC"] == pic_name) & (df["Status"] == "Pending"), "Status"] = "Approved"
+                    df.to_csv(DB_FILE, index=False)
+                    st.rerun()
+                if b2.button(f"❌ Tolak (Hapus) Laporan {pic_name}", key=f"rej_{pic_name}"):
+                    df.drop(df[(df["PIC"] == pic_name) & (df["Status"] == "Pending")].index, inplace=True)
+                    df.to_csv(DB_FILE, index=False)
+                    st.rerun()
                 st.write("---")
-        
-        with st.expander("Lihat Riwayat Approved"):
-            st.dataframe(df[df["Status"] == "Approved"], use_container_width=True)
+        else:
+            st.info("Tidak ada laporan baru.")
+
+        with st.expander("Lihat Riwayat Approved (Rincian per Item)"):
+            approved_df = df[df["Status"] == "Approved"].copy()
+            if not approved_df.empty:
+                # Tampilkan rincian per item
+                st.dataframe(approved_df[["Tanggal", "PIC", "Keperluan", "Harga_Satuan"]], use_container_width=True)
+                st.write(f"**Total Pengeluaran Keseluruhan:** Rp{approved_df['Harga_Satuan'].sum():,}")
+            else:
+                st.write("Belum ada riwayat.")
     else:
         st.info("Belum ada data.")
 
@@ -115,4 +127,4 @@ elif choice == "Ekspor Data":
     st.subheader("📊 Ekspor")
     if not df.empty:
         csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download Laporan CSV", csv, "laporan_hcga.csv", "text/csv")
+        st.download_button("Download Laporan Rinci (CSV)", csv, "laporan_rinci_hcga.csv", "text/csv")
