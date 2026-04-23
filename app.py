@@ -23,9 +23,8 @@ df = load_data()
 
 if choice == "Input Tim (Multi-Item)":
     st.subheader("📝 Form Pengeluaran Bertahap")
-    
     pic = st.selectbox("Nama Tim", ["Tim A", "Tim B"])
-    dana_modal = st.number_input("Total Dana yang Diterima dari Manager (Rp)", min_value=0, step=1000, key="modal_input")
+    dana_modal = st.number_input("Total Dana yang Diterima (Rp)", min_value=0, step=1000, key="modal_input")
 
     st.write("---")
     st.write("### Langkah 2: Input Daftar Belanja")
@@ -41,7 +40,7 @@ if choice == "Input Tim (Multi-Item)":
                 st.session_state.items_list.append({"Barang": item_nama, "Harga": item_harga})
                 st.rerun()
 
-    if len(st.session_state.items_list) > 0:
+    if st.session_state.items_list:
         st.write("#### Daftar Belanja Saat Ini:")
         total_terpakai = 0
         for index, item in enumerate(st.session_state.items_list):
@@ -49,87 +48,91 @@ if choice == "Input Tim (Multi-Item)":
             c1.write(item["Barang"])
             c2.write(f"Rp{item['Harga']:,}")
             total_terpakai += item["Harga"]
-            if c3.button("🗑️ Hapus", key=f"del_{index}"):
+            if c3.button("🗑️ Hapus", key=f"del_input_{index}"):
                 st.session_state.items_list.pop(index)
                 st.rerun()
         
         st.write("---")
         sisa_sekarang = dana_modal - total_terpakai
-        col_m1, col_m2 = st.columns(2)
-        col_m1.metric("Total Belanja", f"Rp{total_terpakai:,}")
-        col_m2.metric("Sisa Saldo Uang", f"Rp{sisa_sekarang:,}")
+        st.metric("Total Belanja", f"Rp{total_terpakai:,}")
+        st.metric("Sisa Saldo Uang", f"Rp{sisa_sekarang:,}")
 
         if st.button("🚀 Kirim Laporan ke Manager", use_container_width=True):
             if dana_modal <= 0:
-                st.error("Gagal! Anda belum mengisi 'Total Dana yang Diterima'.")
+                st.error("Gagal! Isi Modal terlebih dahulu.")
             else:
                 new_rows = []
                 for i in st.session_state.items_list:
                     new_rows.append({
                         "Tanggal": datetime.now().strftime("%Y-%m-%d"),
-                        "PIC": pic, 
-                        "Keperluan": i["Barang"], 
-                        "Dana_Awal": dana_modal,
-                        "Harga_Satuan": i["Harga"], 
-                        "Status": "Pending"
+                        "PIC": pic, "Keperluan": i["Barang"], "Dana_Awal": dana_modal,
+                        "Harga_Satuan": i["Harga"], "Status": "Pending"
                     })
-                
                 df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 df.to_csv(DB_FILE, index=False)
                 st.session_state.items_list = []
-                st.success("Laporan Berhasil Terkirim!")
+                st.success("Laporan Terkirim!")
                 st.rerun()
 
 elif choice == "Dashboard Manager":
-    st.subheader("🕵️ Dashboard Verifikasi")
-    if not df.empty:
-        pending_items = df[df["Status"] == "Pending"]
-        
-        if not pending_items.empty:
-            for pic_name in pending_items["PIC"].unique():
-                st.write(f"### Laporan dari {pic_name}")
-                pic_df = pending_items[pending_items["PIC"] == pic_name]
-                st.table(pic_df[["Keperluan", "Harga_Satuan"]])
-                
-                total_pic = pic_df["Harga_Satuan"].sum()
-                modal_pic = pic_df["Dana_Awal"].iloc[0]
-                st.write(f"**Total Belanja:** Rp{total_pic:,} | **Modal:** Rp{modal_pic:,} | **Sisa:** Rp{modal_pic - total_pic:,}")
-                
-                b1, b2 = st.columns([1, 5])
-                if b1.button(f"✅ Approve Laporan {pic_name}", key=f"app_{pic_name}"):
+    st.subheader("🕵️ Dashboard Verifikasi & Edit")
+    
+    # 1. Bagian Approval (Pending)
+    pending_df = df[df["Status"] == "Pending"]
+    if not pending_df.empty:
+        for pic_name in pending_df["PIC"].unique():
+            with st.expander(f"🔴 LAPORAN BARU: {pic_name}", expanded=True):
+                pic_pending = pending_df[pending_df["PIC"] == pic_name]
+                st.table(pic_pending[["Keperluan", "Harga_Satuan"]])
+                if st.button(f"✅ Approve Laporan {pic_name}", key=f"app_{pic_name}"):
                     df.loc[(df["PIC"] == pic_name) & (df["Status"] == "Pending"), "Status"] = "Approved"
                     df.to_csv(DB_FILE, index=False)
                     st.rerun()
-                if b2.button(f"❌ Tolak Laporan {pic_name}", key=f"rej_{pic_name}"):
-                    df.drop(df[(df["PIC"] == pic_name) & (df["Status"] == "Pending")].index, inplace=True)
-                    df.to_csv(DB_FILE, index=False)
-                    st.rerun()
-                st.write("---")
-        else:
-            st.info("Tidak ada laporan baru.")
-
-        # BAGIAN YANG DIPERBARUI: Ringkasan di bawah riwayat approved
-        with st.expander("Lihat Riwayat Approved (Rincian per Item)", expanded=True):
-            approved_df = df[df["Status"] == "Approved"].copy()
-            if not approved_df.empty:
-                st.dataframe(approved_df[["Tanggal", "PIC", "Keperluan", "Harga_Satuan"]], use_container_width=True)
+    
+    st.write("---")
+    
+    # 2. Bagian Riwayat Terpisah per Tim (Pertanggungjawaban Masing-masing)
+    st.subheader("📋 Pertanggungjawaban per Tim (Approved)")
+    approved_all = df[df["Status"] == "Approved"]
+    
+    if not approved_all.empty:
+        tabs = st.tabs(list(approved_all["PIC"].unique()))
+        
+        for i, pic_name in enumerate(approved_all["PIC"].unique()):
+            with tabs[i]:
+                pic_data = approved_all[approved_all["PIC"] == pic_name].copy()
+                
+                # Fitur Edit/Hapus Per Baris
+                for idx, row in pic_data.iterrows():
+                    with st.container():
+                        c1, c2, c3, c4 = st.columns([3, 2, 1, 1])
+                        new_name = c1.text_input("Barang", row["Keperluan"], key=f"edit_n_{idx}")
+                        new_price = c2.number_input("Harga", value=int(row["Harga_Satuan"]), key=f"edit_p_{idx}")
+                        
+                        if c3.button("💾 Simpan", key=f"save_{idx}"):
+                            df.at[idx, "Keperluan"] = new_name
+                            df.at[idx, "Harga_Satuan"] = new_price
+                            df.to_csv(DB_FILE, index=False)
+                            st.rerun()
+                            
+                        if c4.button("🗑️ Hapus", key=f"del_final_{idx}"):
+                            df.drop(idx, inplace=True)
+                            df.to_csv(DB_FILE, index=False)
+                            st.rerun()
                 
                 st.write("---")
-                # Menghitung total modal unik (berdasarkan input per sesi kirim agar tidak double count)
-                # Karena Dana_Awal sama untuk tiap item dalam satu sesi kirim, kita ambil rata-rata per PIC per Tanggal
-                total_modal_all = approved_df.groupby(['Tanggal', 'PIC'])['Dana_Awal'].first().sum()
-                total_belanja_all = approved_df['Harga_Satuan'].sum()
-                total_sisa_all = total_modal_all - total_belanja_all
+                # Ringkasan per Tim
+                t_modal = pic_data.groupby('Tanggal')['Dana_Awal'].first().sum()
+                t_belanja = pic_data['Harga_Satuan'].sum()
                 
-                col_res1, col_res2, col_res3 = st.columns(3)
-                col_res1.metric("Total Modal Diberikan", f"Rp{total_modal_all:,}")
-                col_res2.metric("Total Belanja Keseluruhan", f"Rp{total_belanja_all:,}")
-                col_res3.metric("Total Sisa Saldo", f"Rp{total_sisa_all:,}")
-            else:
-                st.write("Belum ada riwayat.")
+                m1, m2, m3 = st.columns(3)
+                m1.metric(f"Total Modal {pic_name}", f"Rp{t_modal:,}")
+                m2.metric(f"Total Belanja {pic_name}", f"Rp{t_belanja:,}")
+                m3.metric(f"Sisa Saldo {pic_name}", f"Rp{t_modal - t_belanja:,}")
+    else:
+        st.info("Belum ada data yang disetujui.")
 
 elif choice == "Ekspor Data":
     st.subheader("📊 Ekspor")
     if not df.empty:
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, "laporan_hcga.csv", "text/csv")
+        st.download_button("Download CSV", df.to_csv(index=False).encode('utf-8'), "laporan_hcga.csv", "text/csv")
