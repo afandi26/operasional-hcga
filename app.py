@@ -23,9 +23,10 @@ df = load_data()
 
 if choice == "Input Tim (Multi-Item)":
     st.subheader("📝 Form Pengeluaran Bertahap")
-    with st.expander("Langkah 1: Input Modal dari Manager", expanded=True):
-        pic = st.selectbox("Nama Tim", ["Tim A", "Tim B"])
-        dana_modal = st.number_input("Total Dana yang Diterima (Modal Awal)", min_value=0, step=1000)
+    
+    # PERBAIKAN: Input modal diletakkan di luar form agar lebih stabil
+    pic = st.selectbox("Nama Tim", ["Tim A", "Tim B"])
+    dana_modal = st.number_input("Total Dana yang Diterima dari Manager (Rp)", min_value=0, step=1000, key="modal_input")
 
     st.write("---")
     st.write("### Langkah 2: Input Daftar Belanja")
@@ -43,11 +44,6 @@ if choice == "Input Tim (Multi-Item)":
 
     if len(st.session_state.items_list) > 0:
         st.write("#### Daftar Belanja Saat Ini:")
-        h1, h2, h3 = st.columns([3, 2, 1])
-        h1.write("**Nama Barang**")
-        h2.write("**Harga**")
-        h3.write("**Aksi**")
-        
         total_terpakai = 0
         for index, item in enumerate(st.session_state.items_list):
             c1, c2, c3 = st.columns([3, 2, 1])
@@ -64,51 +60,52 @@ if choice == "Input Tim (Multi-Item)":
         col_m1.metric("Total Belanja", f"Rp{total_terpakai:,}")
         col_m2.metric("Sisa Saldo Uang", f"Rp{sisa_sekarang:,}")
 
+        # PERBAIKAN: Validasi Modal sebelum kirim
         if st.button("🚀 Kirim Laporan ke Manager", use_container_width=True):
-            semua_barang = ", ".join([i["Barang"] for i in st.session_state.items_list])
-            new_row = {
-                "Tanggal": datetime.now().strftime("%Y-%m-%d"),
-                "PIC": pic, "Keperluan": semua_barang, "Dana_Awal": dana_modal,
-                "Total_Belanja": total_terpakai, "Sisa": sisa_sekarang, "Status": "Pending"
-            }
-            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-            df.to_csv(DB_FILE, index=False)
-            st.session_state.items_list = []
-            st.success("Terkirim!")
-            st.rerun()
+            if dana_modal <= 0:
+                st.error("Gagal! Anda belum mengisi 'Total Dana yang Diterima' di Langkah 1.")
+            else:
+                semua_barang = ", ".join([i["Barang"] for i in st.session_state.items_list])
+                new_row = {
+                    "Tanggal": datetime.now().strftime("%Y-%m-%d"),
+                    "PIC": pic, "Keperluan": semua_barang, "Dana_Awal": dana_modal,
+                    "Total_Belanja": total_terpakai, "Sisa": sisa_sekarang, "Status": "Pending"
+                }
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                df.to_csv(DB_FILE, index=False)
+                st.session_state.items_list = []
+                st.success("Laporan Berhasil Terkirim!")
+                st.balloons()
+                st.rerun()
 
 elif choice == "Dashboard Manager":
     st.subheader("🕵️ Dashboard Verifikasi")
-    
     if not df.empty:
-        # Menampilkan tabel dengan kontrol per baris
+        pending_data = df[df["Status"] == "Pending"]
+        if pending_data.empty:
+            st.info("Tidak ada laporan baru yang perlu dicek.")
+        
         for index, row in df.iterrows():
-            # Hanya tampilkan yang masih Pending
             if row["Status"] == "Pending":
                 with st.container():
                     st.write(f"**Tanggal:** {row['Tanggal']} | **PIC:** {row['PIC']}")
                     st.write(f"**Barang:** {row['Keperluan']}")
-                    col_a, col_b, col_c, col_d = st.columns(4)
-                    col_a.write(f"Modal: Rp{row['Dana_Awal']:,}")
-                    col_b.write(f"Belanja: Rp{row['Total_Belanja']:,}")
-                    col_c.write(f"Sisa: Rp{row['Sisa']:,}")
+                    col_a, col_b, col_c = st.columns(3)
+                    col_a.write(f"**Modal:** Rp{row['Dana_Awal']:,}")
+                    col_b.write(f"**Belanja:** Rp{row['Total_Belanja']:,}")
+                    col_c.write(f"**Sisa:** Rp{row['Sisa']:,}")
                     
-                    # Tombol Approve dan Reject
-                    btn_col1, btn_col2 = st.columns([1, 4])
-                    if btn_col1.button("✅ Approve", key=f"app_{index}"):
+                    b1, b2 = st.columns([1, 5])
+                    if b1.button("✅ Approve", key=f"app_{index}"):
                         df.at[index, "Status"] = "Approved"
                         df.to_csv(DB_FILE, index=False)
-                        st.success(f"Laporan {row['PIC']} Disetujui!")
                         st.rerun()
-                    
-                    if btn_col2.button("❌ Tolak (Hapus)", key=f"rej_{index}"):
+                    if b2.button("❌ Tolak (Hapus)", key=f"rej_{index}"):
                         df.drop(index, inplace=True)
                         df.to_csv(DB_FILE, index=False)
-                        st.warning(f"Laporan {row['PIC']} Ditolak & Dihapus!")
                         st.rerun()
                 st.write("---")
         
-        # Tampilkan data yang sudah Approved di bagian bawah
         with st.expander("Lihat Riwayat Approved"):
             st.dataframe(df[df["Status"] == "Approved"], use_container_width=True)
     else:
