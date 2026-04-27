@@ -35,7 +35,6 @@ if choice == "Dashboard Manager":
     
     with st.expander("💰 Input Pemberian Modal Baru", expanded=False):
         c1, c2 = st.columns(2)
-        # DIUBAH: Menggunakan text_input agar bisa ketik nama siapa saja (Andes, Arif, dll)
         target_nama = c1.text_input("Berikan Modal Ke Nama (Contoh: Andes):")
         jumlah_modal = c2.number_input("Jumlah Modal (Rp)", min_value=0, step=50000)
         
@@ -58,7 +57,6 @@ if choice == "Dashboard Manager":
 
     st.write("---")
     
-    # Fitur Verifikasi
     pending_df = df[df["Status"] == "Pending"]
     if not pending_df.empty:
         st.subheader("📩 Laporan Perlu Verifikasi")
@@ -77,14 +75,11 @@ if choice == "Dashboard Manager":
 elif choice == "Input Laporan Tim":
     st.subheader("📝 Form Laporan Pengeluaran")
     
-    # 1. Input Nama (Gunakan key agar state terjaga)
     nama_user = st.text_input("Ketik Nama Anda:", key="input_nama_user").strip().title()
     
-    # Inisialisasi daftar belanja jika belum ada
     if 'items_list' not in st.session_state:
         st.session_state.items_list = []
 
-    # 2. Logika Tampilan Saldo
     if nama_user:
         user_data = df[df["PIC"] == nama_user]
         modal_user = user_data[user_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
@@ -98,7 +93,28 @@ elif choice == "Input Laporan Tim":
 
         st.write("---")
 
-        # 3. Form Input Barang (Pastikan nama_user sudah ada)
+        # FITUR REFUND (Masuk ke dalam blok 'if nama_user')
+        with st.expander("🔄 Kembalikan Sisa Saldo (Refund ke Manager)", expanded=False):
+            st.write(f"Saldo Anda saat ini adalah **Rp{saldo_user:,}**")
+            jumlah_refund = st.number_input("Jumlah uang yang dikembalikan (Rp)", min_value=0, max_value=int(saldo_user) if saldo_user > 0 else 0, step=1000)
+            alasan_refund = st.text_input("Catatan (Misal: Sisa proyek A)")
+            
+            if st.button("Proses Pengembalian"):
+                if jumlah_refund > 0:
+                    refund_row = pd.DataFrame([{
+                        "Tanggal": datetime.now().strftime("%Y-%m-%d"),
+                        "PIC": nama_user,
+                        "Keperluan": f"PENGEMBALIAN: {alasan_refund}",
+                        "Dana_Awal": 0,
+                        "Harga_Satuan": -jumlah_refund, 
+                        "Status": "Approved"
+                    }])
+                    df = pd.concat([df, refund_row], ignore_index=True)
+                    df.to_csv(DB_FILE, index=False)
+                    st.success(f"Berhasil! Saldo Rp{jumlah_refund:,} telah dikembalikan ke sistem.")
+                    st.rerun()
+
+        # 3. Form Input Barang
         with st.form("form_tambah_barang", clear_on_submit=True):
             c1, c2 = st.columns(2)
             item_nama = c1.text_input("Nama Barang/Keperluan")
@@ -108,15 +124,11 @@ elif choice == "Input Laporan Tim":
             
             if submit_tambah:
                 if item_nama and item_harga > 0:
-                    st.session_state.items_list.append({
-                        "Barang": item_nama, 
-                        "Harga": item_harga
-                    })
-                    st.rerun() # Penting agar daftar langsung terupdate di layar
+                    st.session_state.items_list.append({"Barang": item_nama, "Harga": item_harga})
+                    st.rerun()
                 else:
                     st.error("Isi nama barang dan harganya!")
 
-        # 4. Tampilkan Daftar yang baru ditambahkan
         if st.session_state.items_list:
             st.write("### 🛒 Daftar Belanja Anda:")
             total_belanja_ini = 0
@@ -126,7 +138,6 @@ elif choice == "Input Laporan Tim":
             
             st.info(f"**Total Belanja yang akan dikirim: Rp{total_belanja_ini:,}**")
             
-            # Tombol Kirim Final
             if st.button("🚀 Kirim Laporan ke Manager"):
                 new_rows = []
                 for itm in st.session_state.items_list:
@@ -141,7 +152,7 @@ elif choice == "Input Laporan Tim":
                 
                 df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
                 df.to_csv(DB_FILE, index=False)
-                st.session_state.items_list = [] # Kosongkan daftar setelah kirim
+                st.session_state.items_list = []
                 st.success("Laporan berhasil terkirim!")
                 st.rerun()
     else:
@@ -150,7 +161,6 @@ elif choice == "Input Laporan Tim":
 # --- MENU 3: LIHAT SALDO PERSONAL ---
 elif choice == "Lihat Saldo Personal":
     st.subheader("📊 Cek Saldo Real-time")
-    # Mengambil daftar nama unik yang pernah ada di database
     daftar_nama = sorted(df["PIC"].unique())
     if daftar_nama:
         pic = st.selectbox("Pilih Nama Anda", daftar_nama)
