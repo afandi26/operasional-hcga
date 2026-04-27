@@ -25,36 +25,40 @@ st.title("💰 Sistem Pengeluaran HC & GA")
 
 df = load_data()
 
-# 3. SIDEBAR MENU (Hanya Satu Kali Saja)
-menu = ["Dashboard Manager", "Input Tim (Kirim Laporan)", "Lihat Saldo Tim"]
+# 3. SIDEBAR MENU
+menu = ["Dashboard Manager", "Input Laporan Tim", "Lihat Saldo Personal"]
 choice = st.sidebar.selectbox("Menu Utama", menu)
 
-# --- MENU 1: DASHBOARD MANAGER (Input Modal & Approval) ---
+# --- MENU 1: DASHBOARD MANAGER ---
 if choice == "Dashboard Manager":
     st.subheader("🕵️ Dashboard Manager")
     
-    # FITUR: INPUT MODAL UNTUK TIM (Penambah Saldo)
-    with st.expander("💰 Input Pemberian Modal Baru (Uang Keluar dari Manager)", expanded=False):
+    with st.expander("💰 Input Pemberian Modal Baru", expanded=False):
         c1, c2 = st.columns(2)
-        target_tim = c1.selectbox("Berikan Modal Ke:", ["Tim A", "Tim B"], key="target_modal")
+        # DIUBAH: Menggunakan text_input agar bisa ketik nama siapa saja (Andes, Arif, dll)
+        target_nama = c1.text_input("Berikan Modal Ke Nama (Contoh: Andes):")
         jumlah_modal = c2.number_input("Jumlah Modal (Rp)", min_value=0, step=50000)
+        
         if st.button("Kirim Modal"):
-            new_modal = pd.DataFrame([{
-                "Tanggal": datetime.now().strftime("%Y-%m-%d"),
-                "PIC": target_tim, 
-                "Keperluan": "MODAL AWAL", 
-                "Dana_Awal": jumlah_modal, 
-                "Harga_Satuan": 0, 
-                "Status": "Approved"
-            }])
-            df = pd.concat([df, new_modal], ignore_index=True)
-            df.to_csv(DB_FILE, index=False)
-            st.success(f"Berhasil menginput modal Rp{jumlah_modal:,} untuk {target_tim}")
-            st.rerun()
+            if target_nama:
+                new_modal = pd.DataFrame([{
+                    "Tanggal": datetime.now().strftime("%Y-%m-%d"),
+                    "PIC": target_nama.strip().title(), 
+                    "Keperluan": "MODAL AWAL", 
+                    "Dana_Awal": jumlah_modal, 
+                    "Harga_Satuan": 0, 
+                    "Status": "Approved"
+                }])
+                df = pd.concat([df, new_modal], ignore_index=True)
+                df.to_csv(DB_FILE, index=False)
+                st.success(f"Berhasil menginput modal Rp{jumlah_modal:,} untuk {target_nama}")
+                st.rerun()
+            else:
+                st.error("Nama harus diisi!")
 
     st.write("---")
     
-    # FITUR: APPROVAL LAPORAN BARU
+    # Fitur Verifikasi
     pending_df = df[df["Status"] == "Pending"]
     if not pending_df.empty:
         st.subheader("📩 Laporan Perlu Verifikasi")
@@ -67,12 +71,13 @@ if choice == "Dashboard Manager":
                     df.to_csv(DB_FILE, index=False)
                     st.rerun()
     else:
-        st.info("Tidak ada laporan baru yang perlu dicek.")
+        st.info("Tidak ada laporan baru.")
 
-# --- MENU 2: INPUT TIM (Kirim Daftar Belanja) ---
-elif choice == "Input Tim (Kirim Laporan)":
-    st.subheader("📝 Form Laporan Pengeluaran Tim")
-    pic = st.selectbox("Pilih Nama Tim Anda", ["Tim A", "Tim B"])
+# --- MENU 2: INPUT TIM ---
+elif choice == "Input Laporan Tim":
+    st.subheader("📝 Form Laporan Pengeluaran")
+    # DIUBAH: Tim mengetikkan nama mereka sendiri
+    nama_user = st.text_input("Ketik Nama Anda (Samakan dengan input Manager):").strip().title()
     
     if 'items_list' not in st.session_state:
         st.session_state.items_list = []
@@ -93,47 +98,46 @@ elif choice == "Input Tim (Kirim Laporan)":
             st.write(f"{i+1}. {itm['Barang']} - Rp{itm['Harga']:,}")
             total_skrg += itm['Harga']
         
-        st.metric("Total Belanja Ini", f"Rp{total_skrg:,}")
-        
         if st.button("🚀 Kirim Semua ke Manager"):
-            new_rows = []
-            for itm in st.session_state.items_list:
-                new_rows.append({
-                    "Tanggal": datetime.now().strftime("%Y-%m-%d"),
-                    "PIC": pic, 
-                    "Keperluan": itm["Barang"], 
-                    "Dana_Awal": 0, # Belanja tidak menambah modal
-                    "Harga_Satuan": itm["Harga"], 
-                    "Status": "Pending"
-                })
-            df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-            df.to_csv(DB_FILE, index=False)
-            st.session_state.items_list = []
-            st.success("Laporan berhasil dikirim ke Manager!")
-            st.rerun()
+            if nama_user:
+                new_rows = []
+                for itm in st.session_state.items_list:
+                    new_rows.append({
+                        "Tanggal": datetime.now().strftime("%Y-%m-%d"),
+                        "PIC": nama_user, 
+                        "Keperluan": itm["Barang"], 
+                        "Dana_Awal": 0,
+                        "Harga_Satuan": itm["Harga"], 
+                        "Status": "Pending"
+                    })
+                df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+                df.to_csv(DB_FILE, index=False)
+                st.session_state.items_list = []
+                st.success(f"Laporan {nama_user} berhasil dikirim!")
+                st.rerun()
+            else:
+                st.error("Tolong isi Nama Anda sebelum mengirim!")
 
-# --- MENU 3: LIHAT SALDO (Sinkronisasi Manager & Tim) ---
-elif choice == "Lihat Saldo Tim":
+# --- MENU 3: LIHAT SALDO PERSONAL ---
+elif choice == "Lihat Saldo Personal":
     st.subheader("📊 Cek Saldo Real-time")
-    pic = st.selectbox("Pilih Tim", ["Tim A", "Tim B"], key="cek_saldo")
-    
-    pic_data = df[df["PIC"] == pic]
-    
-    # Hitung Modal Awal dari Manager
-    total_modal = pic_data[pic_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
-    # Hitung Semua yang sudah disetujui
-    total_belanja = pic_data[pic_data["Status"] == "Approved"]["Harga_Satuan"].sum()
-    saldo = total_modal - total_belanja
+    # Mengambil daftar nama unik yang pernah ada di database
+    daftar_nama = sorted(df["PIC"].unique())
+    if daftar_nama:
+        pic = st.selectbox("Pilih Nama Anda", daftar_nama)
+        
+        pic_data = df[df["PIC"] == pic]
+        total_modal = pic_data[pic_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
+        total_belanja = pic_data[pic_data["Status"] == "Approved"]["Harga_Satuan"].sum()
+        saldo = total_modal - total_belanja
 
-    if total_modal == 0:
-        st.error(f"⚠️ Manager belum menginput Modal Awal untuk {pic}.")
+        st.success(f"✅ Saldo Tersisa untuk **{pic}**: **Rp{saldo:,}**")
+        
+        c1, c2 = st.columns(2)
+        c1.metric("Total Modal Diterima", f"Rp{total_modal:,}")
+        c2.metric("Total Belanja Approved", f"Rp{total_belanja:,}")
+        
+        st.write("### Riwayat Transaksi:")
+        st.dataframe(pic_data[["Tanggal", "Keperluan", "Harga_Satuan", "Status"]], use_container_width=True)
     else:
-        st.success(f"✅ Saldo Tersisa: **Rp{saldo:,}**")
-        
-        col1, col2 = st.columns(2)
-        col1.metric("Total Modal Diberikan", f"Rp{total_modal:,}")
-        col2.metric("Total Penggunaan (Approved)", f"Rp{total_belanja:,}")
-        
-    st.write("---")
-    st.write("### Riwayat Transaksi Anda:")
-    st.dataframe(pic_data[["Tanggal", "Keperluan", "Harga_Satuan", "Status"]])
+        st.info("Belum ada data transaksi di sistem.")
