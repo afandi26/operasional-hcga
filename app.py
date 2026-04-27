@@ -33,6 +33,7 @@ choice = st.sidebar.selectbox("Menu Utama", menu)
 if choice == "Dashboard Manager":
     st.subheader("🕵️ Dashboard Manager")
     
+    # 1. Fitur Input Modal (Tetap sama)
     with st.expander("💰 Input Pemberian Modal Baru", expanded=False):
         c1, c2 = st.columns(2)
         target_nama = c1.text_input("Berikan Modal Ke Nama (Contoh: Andes):")
@@ -52,24 +53,49 @@ if choice == "Dashboard Manager":
                 df.to_csv(DB_FILE, index=False)
                 st.success(f"Berhasil menginput modal Rp{jumlah_modal:,} untuk {target_nama}")
                 st.rerun()
-            else:
-                st.error("Nama harus diisi!")
 
     st.write("---")
     
+    # 2. Fitur Verifikasi, Edit, dan Hapus
     pending_df = df[df["Status"] == "Pending"]
     if not pending_df.empty:
         st.subheader("📩 Laporan Perlu Verifikasi")
-        for pic_name in pending_df["PIC"].unique():
-            with st.expander(f"🔴 LAPORAN DARI: {pic_name}", expanded=True):
-                pic_p = pending_df[pending_df["PIC"] == pic_name]
-                st.table(pic_p[["Tanggal", "Keperluan", "Harga_Satuan"]])
-                if st.button(f"✅ Approve Semua Laporan {pic_name}", key=f"app_{pic_name}"):
-                    df.loc[(df["PIC"] == pic_name) & (df["Status"] == "Pending"), "Status"] = "Approved"
+        
+        # Iterasi per baris agar bisa diedit/dihapus satu per satu
+        for index, row in pending_df.iterrows():
+            with st.expander(f"📄 Laporan: {row['PIC']} - {row['Keperluan']} (Rp{row['Harga_Satuan']:,})", expanded=True):
+                col1, col2, col3 = st.columns([2, 1, 1])
+                
+                # Form Edit Sederhana
+                new_keperluan = col1.text_input("Edit Keperluan", value=row['Keperluan'], key=f"edit_kep_{index}")
+                new_harga = col2.number_input("Edit Harga (Rp)", value=int(row['Harga_Satuan']), step=1000, key=f"edit_hrg_{index}")
+                
+                btn_col1, btn_col2, btn_col3 = st.columns(3)
+                
+                # TOMBOL APPROVE
+                if btn_col1.button(f"✅ Approve", key=f"app_{index}"):
+                    df.at[index, "Keperluan"] = new_keperluan
+                    df.at[index, "Harga_Satuan"] = new_harga
+                    df.at[index, "Status"] = "Approved"
                     df.to_csv(DB_FILE, index=False)
+                    st.toast(f"Laporan {row['PIC']} disetujui!")
+                    st.rerun()
+                
+                # TOMBOL HAPUS (Jika tidak sesuai/palsu)
+                if btn_col2.button(f"🗑️ Hapus", key=f"del_{index}"):
+                    df = df.drop(index)
+                    df.to_csv(DB_FILE, index=False)
+                    st.warning(f"Laporan {row['PIC']} telah dihapus.")
+                    st.rerun()
+                    
+                # TOMBOL REJECT (Opsional: Tandai reject tanpa hapus data)
+                if btn_col3.button(f"❌ Reject", key=f"rej_{index}"):
+                    df.at[index, "Status"] = "Rejected"
+                    df.to_csv(DB_FILE, index=False)
+                    st.error(f"Laporan {row['PIC']} ditolak.")
                     st.rerun()
     else:
-        st.info("Tidak ada laporan baru.")
+        st.info("Tidak ada laporan baru yang perlu dicek.")
 
 # --- MENU 2: INPUT TIM ---
 elif choice == "Input Laporan Tim":
