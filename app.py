@@ -100,19 +100,16 @@ elif choice == "Input Laporan Tim":
             alasan_refund = st.text_input("Catatan (Misal: Sisa proyek A)")
             
             if st.button("Proses Pengembalian"):
-                if jumlah_refund > 0:
-                    refund_row = pd.DataFrame([{
-                        "Tanggal": datetime.now().strftime("%Y-%m-%d"),
-                        "PIC": nama_user,
-                        "Keperluan": f"PENGEMBALIAN: {alasan_refund}",
-                        "Dana_Awal": 0,
-                        "Harga_Satuan": -jumlah_refund, 
-                        "Status": "Approved"
-                    }])
-                    df = pd.concat([df, refund_row], ignore_index=True)
-                    df.to_csv(DB_FILE, index=False)
-                    st.success(f"Berhasil! Saldo Rp{jumlah_refund:,} telah dikembalikan ke sistem.")
-                    st.rerun()
+    if jumlah_refund > 0:
+        refund_row = pd.DataFrame([{
+            "Tanggal": datetime.now().strftime("%Y-%m-%d"),
+            "PIC": nama_user,
+            "Keperluan": f"PENGEMBALIAN: {alasan_refund}",
+            "Dana_Awal": 0,
+            "Harga_Satuan": jumlah_refund, # UBAH JADI POSITIF
+            "Status": "Approved"
+        }])
+        # ... sisa kode concat dan save ...
 
         # 3. Form Input Barang
         with st.form("form_tambah_barang", clear_on_submit=True):
