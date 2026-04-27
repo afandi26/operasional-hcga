@@ -83,7 +83,9 @@ elif choice == "Input Laporan Tim":
     if nama_user:
         user_data = df[df["PIC"] == nama_user]
         modal_user = user_data[user_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
+        # Perhitungan belanja menyertakan nominal positif (belanja) dan negatif (refund modal)
         belanja_user = user_data[user_data["Status"] == "Approved"]["Harga_Satuan"].sum()
+        # Saldo = Total Modal - Total Belanja
         saldo_user = modal_user - belanja_user
         
         if modal_user > 0:
@@ -93,30 +95,35 @@ elif choice == "Input Laporan Tim":
 
         st.write("---")
 
-        # FITUR REFUND (Masuk ke dalam blok 'if nama_user')
+        # --- FITUR REFUND (PASTIKAN INDENTASI SEPERTI INI) ---
         with st.expander("🔄 Kembalikan Sisa Saldo (Refund ke Manager)", expanded=False):
             st.write(f"Saldo Anda saat ini adalah **Rp{saldo_user:,}**")
             jumlah_refund = st.number_input("Jumlah uang yang dikembalikan (Rp)", min_value=0, max_value=int(saldo_user) if saldo_user > 0 else 0, step=1000)
-            alasan_refund = st.text_input("Catatan (Misal: Sisa proyek A)")
+            alasan_refund = st.text_input("Catatan (Misal: Sudah tidak ada belanja lagi)")
             
             if st.button("Proses Pengembalian"):
-    if jumlah_refund > 0:
-        refund_row = pd.DataFrame([{
-            "Tanggal": datetime.now().strftime("%Y-%m-%d"),
-            "PIC": nama_user,
-            "Keperluan": f"PENGEMBALIAN: {alasan_refund}",
-            "Dana_Awal": 0,
-            "Harga_Satuan": jumlah_refund, # UBAH JADI POSITIF
-            "Status": "Approved"
-        }])
-        # ... sisa kode concat dan save ...
+                if jumlah_refund > 0:
+                    refund_row = pd.DataFrame([{
+                        "Tanggal": datetime.now().strftime("%Y-%m-%d"),
+                        "PIC": nama_user,
+                        "Keperluan": f"PENGEMBALIAN: {alasan_refund}",
+                        "Dana_Awal": 0,
+                        "Harga_Satuan": jumlah_refund, # Dicatat sebagai 'belanja' agar saldo berkurang jadi 0
+                        "Status": "Approved"
+                    }])
+                    df = pd.concat([df, refund_row], ignore_index=True)
+                    df.to_csv(DB_FILE, index=False)
+                    st.success(f"Berhasil! Sisa saldo telah dikembalikan ke sistem.")
+                    st.rerun()
+                else:
+                    st.error("Masukkan nominal pengembalian!")
 
         # 3. Form Input Barang
+        st.write("### ➕ Tambah Belanja Baru")
         with st.form("form_tambah_barang", clear_on_submit=True):
             c1, c2 = st.columns(2)
             item_nama = c1.text_input("Nama Barang/Keperluan")
             item_harga = c2.number_input("Harga Sesuai Nota (Rp)", min_value=0, step=1000)
-            
             submit_tambah = st.form_submit_button("➕ Tambahkan ke Daftar")
             
             if submit_tambah:
@@ -126,8 +133,10 @@ elif choice == "Input Laporan Tim":
                 else:
                     st.error("Isi nama barang dan harganya!")
 
+        # 4. Tampilkan Daftar Belanja Sementara
         if st.session_state.items_list:
-            st.write("### 🛒 Daftar Belanja Anda:")
+            st.write("---")
+            st.write("### 🛒 Daftar Belanja Anda (Belum Terkirim):")
             total_belanja_ini = 0
             for i, itm in enumerate(st.session_state.items_list):
                 st.write(f"{i+1}. {itm['Barang']} - Rp{itm['Harga']:,}")
