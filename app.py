@@ -83,25 +83,20 @@ if choice == "Input Tim (Multi-Item)":
 elif choice == "Dashboard Manager":
     st.subheader("🕵️ Dashboard Verifikasi & Edit")
     
-    # 1. Approval (Pending) dengan Rincian Dana
     pending_df = df[df["Status"] == "Pending"]
     if not pending_df.empty:
         for pic_name in pending_df["PIC"].unique():
             with st.expander(f"🔴 LAPORAN BARU: {pic_name}", expanded=True):
                 pic_p = pending_df[pending_df["PIC"] == pic_name]
+                st.table(pic_p[["Tanggal", "Keperluan", "Harga_Satuan"]])
                 
-                # Tabel Rincian Barang
-                st.table(pic_p[["Keperluan", "Harga_Satuan"]])
-                
-                # PERBAIKAN: Menampilkan Rincian Dana Sebelum Approve
                 t_modal_p = pic_p["Dana_Awal"].iloc[0] if not pic_p.empty else 0
                 t_belanja_p = pic_p["Harga_Satuan"].sum()
-                t_sisa_p = t_modal_p - t_belanja_p
                 
                 c_p1, c_p2, c_p3 = st.columns(3)
                 c_p1.metric("Modal Diterima Tim", f"Rp{t_modal_p:,}")
                 c_p2.metric("Total Belanja Laporan Ini", f"Rp{t_belanja_p:,}")
-                c_p3.metric("Sisa Saldo di Tim", f"Rp{t_sisa_p:,}")
+                c_p3.metric("Sisa Saldo di Tim", f"Rp{t_modal_p - t_belanja_p:,}")
                 
                 if st.button(f"✅ Approve Laporan {pic_name}", key=f"app_{pic_name}"):
                     df.loc[(df["PIC"] == pic_name) & (df["Status"] == "Pending"), "Status"] = "Approved"
@@ -112,7 +107,6 @@ elif choice == "Dashboard Manager":
     
     st.write("---")
     
-    # 2. Pertanggungjawaban per Tim (Approved)
     approved_all = df[df["Status"] == "Approved"]
     if not approved_all.empty:
         st.subheader("📋 Pertanggungjawaban per Tim (Approved)")
@@ -121,34 +115,40 @@ elif choice == "Dashboard Manager":
         
         for i, pic_name in enumerate(unique_pics):
             with tabs[i]:
-                pic_data = approved_all[approved_all["PIC"] == pic_name].copy()
+                # Ambil data per tim dan urutkan berdasarkan tanggal terbaru
+                pic_data = approved_all[approved_all["PIC"] == pic_name].sort_values(by="Tanggal", ascending=False).copy()
                 
-                h1, h2, h3, h4 = st.columns([3, 2, 1, 1])
-                h1.write("**Barang**")
-                h2.write("**Harga**")
-                h3.write("**Simpan**")
-                h4.write("**Hapus**")
+                # Header Tabel dengan kolom Tanggal
+                h1, h2, h3, h4, h5 = st.columns([2, 3, 2, 1, 1])
+                h1.write("**Tanggal**")
+                h2.write("**Barang**")
+                h3.write("**Harga**")
+                h4.write("**Simpan**")
+                h5.write("**Hapus**")
 
                 for idx, row in pic_data.iterrows():
                     curr_val = int(row["Harga_Satuan"]) if pd.notnull(row["Harga_Satuan"]) else 0
                     with st.container():
-                        c1, c2, c3, c4 = st.columns([3, 2, 1, 1])
-                        new_name = c1.text_input("Edit Nama", row["Keperluan"], key=f"n_{idx}", label_visibility="collapsed")
-                        new_price = c2.number_input("Edit Harga", value=curr_val, key=f"p_{idx}", label_visibility="collapsed")
+                        c1, c2, c3, c4, c5 = st.columns([2, 3, 2, 1, 1])
+                        # Kolom Tanggal (Read-only untuk informasi)
+                        c1.write(f"📅 {row['Tanggal']}")
+                        # Kolom Edit Nama dan Harga
+                        new_name = c2.text_input("Edit Nama", row["Keperluan"], key=f"n_{idx}", label_visibility="collapsed")
+                        new_price = c3.number_input("Edit Harga", value=curr_val, key=f"p_{idx}", label_visibility="collapsed")
                         
-                        if c3.button("💾", key=f"s_{idx}"):
+                        if c4.button("💾", key=f"s_{idx}"):
                             df.at[idx, "Keperluan"] = new_name
                             df.at[idx, "Harga_Satuan"] = new_price
                             df.to_csv(DB_FILE, index=False)
                             st.rerun()
                             
-                        if c4.button("🗑️", key=f"d_{idx}"):
+                        if c5.button("🗑️", key=f"d_{idx}"):
                             df.drop(idx, inplace=True)
                             df.to_csv(DB_FILE, index=False)
                             st.rerun()
                 
                 st.write("---")
-                # Perhitungan total modal unik berdasarkan Tanggal dan PIC agar tidak double count
+                # Perhitungan total tetap menggunakan modal unik agar akurat
                 t_modal = pic_data.groupby('Tanggal')['Dana_Awal'].first().sum()
                 t_belanja = pic_data['Harga_Satuan'].sum()
                 
