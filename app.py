@@ -102,19 +102,26 @@ if choice == "Dashboard Manager":
 # --- MENU 2: INPUT TIM (SINKRON DENGAN MODAL MANAGER) ---
 elif choice == "Input Tim (Lihat Saldo)":
     st.subheader("📝 Form Pengeluaran Tim")
-    pic = st.selectbox("Siapa Anda?", ["Tim A", "Tim B"])
+    pic = st.selectbox("Siapa Anda?", ["Tim A", "Tim B"], key="pic_selection")
     
-    # CEK SALDO DARI MANAGER
+    # --- LOGIKA HITUNG SALDO YANG AKURAT ---
     pic_data = df[df["PIC"] == pic]
-    total_modal_manager = pic_data.groupby('Tanggal')['Dana_Awal'].first().sum()
-    total_belanja_tim = pic_data['Harga_Satuan'].sum()
-    saldo_saat_ini = total_modal_manager - total_belanja_tim
+    
+    # 1. Hitung Semua Modal yang pernah diberikan Manager (Keperluan = 'MODAL AWAL')
+    total_modal_diterima = pic_data[pic_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
+    
+    # 2. Hitung Semua Belanja yang sudah Approved
+    total_belanja_approved = pic_data[pic_data["Status"] == "Approved"]["Harga_Satuan"].sum()
+    
+    # 3. Hitung Sisa Saldo Real-time
+    saldo_saat_ini = total_modal_diterima - total_belanja_approved
 
-    # TAMPILAN SALDO UNTUK SALING MENGINGATKAN
-    if total_modal_manager == 0:
-        st.error(f"⚠️ PERINGATAN: Manager belum menginput modal untuk {pic}. Silakan ingatkan Manager!")
+    # --- TAMPILAN INFORMASI SALDO ---
+    if total_modal_diterima == 0:
+        st.error(f"⚠️ PERINGATAN: Manager belum menginput modal awal untuk {pic}. Silakan ingatkan Manager!")
     else:
-        st.info(f"✅ Saldo Anda yang tercatat di sistem: **Rp{saldo_saat_ini:,}**")
+        st.success(f"✅ Saldo Anda yang tercatat di sistem: **Rp{saldo_saat_ini:,}**")
+        st.caption(f"(Total Modal: Rp{total_modal_diterima:,} | Terpakai: Rp{total_belanja_approved:,})")
         
     # Tim tetap bisa input belanja jika saldo ada
     if saldo_saat_ini > 0:
