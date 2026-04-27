@@ -118,51 +118,36 @@ elif choice == "Input Laporan Tim":
                 else:
                     st.error("Masukkan nominal pengembalian!")
 
-        # 3. Form Input Barang
+        # --- 3. Form Input Barang ---
+        st.write("---")
         st.write("### ➕ Tambah Belanja Baru")
-        with st.form("form_tambah_barang", clear_on_submit=True):
-            c1, c2 = st.columns(2)
-            item_nama = c1.text_input("Nama Barang/Keperluan")
-            item_harga = c2.number_input("Harga Sesuai Nota (Rp)", min_value=0, step=1000)
-            submit_tambah = st.form_submit_button("➕ Tambahkan ke Daftar")
-            
-            if submit_tambah:
-                if item_nama and item_harga > 0:
-                    st.session_state.items_list.append({"Barang": item_nama, "Harga": item_harga})
-                    st.rerun()
-                else:
-                    st.error("Isi nama barang dan harganya!")
-
-        # 4. Tampilkan Daftar Belanja Sementara
-        if st.session_state.items_list:
-            st.write("---")
-            st.write("### 🛒 Daftar Belanja Anda (Belum Terkirim):")
-            total_belanja_ini = 0
-            for i, itm in enumerate(st.session_state.items_list):
-                st.write(f"{i+1}. {itm['Barang']} - Rp{itm['Harga']:,}")
-                total_belanja_ini += itm['Harga']
-            
-            st.info(f"**Total Belanja yang akan dikirim: Rp{total_belanja_ini:,}**")
-            
-            if st.button("🚀 Kirim Laporan ke Manager"):
-                new_rows = []
-                for itm in st.session_state.items_list:
-                    new_rows.append({
-                        "Tanggal": datetime.now().strftime("%Y-%m-%d"),
-                        "PIC": nama_user, 
-                        "Keperluan": itm["Barang"], 
-                        "Dana_Awal": 0,
-                        "Harga_Satuan": itm["Harga"], 
-                        "Status": "Pending"
-                    })
+        
+        # Validasi: Hanya tampilkan form jika saldo lebih dari 0
+        if saldo_user > 0:
+            with st.form("form_tambah_barang", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                item_nama = c1.text_input("Nama Barang/Keperluan")
                 
-                df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
-                df.to_csv(DB_FILE, index=False)
-                st.session_state.items_list = []
-                st.success("Laporan berhasil terkirim!")
-                st.rerun()
-    else:
-        st.info("Silakan masukkan nama Anda terlebih dahulu untuk mulai menginput.")
+                # Max value diatur agar tidak bisa input melebihi sisa saldo
+                item_harga = c2.number_input(
+                    "Harga Sesuai Nota (Rp)", 
+                    min_value=0, 
+                    max_value=int(saldo_user), 
+                    step=1000,
+                    help=f"Maksimal input: Rp{saldo_user:,}"
+                )
+                submit_tambah = st.form_submit_button("➕ Tambahkan ke Daftar")
+                
+                if submit_tambah:
+                    if item_nama and item_harga > 0:
+                        st.session_state.items_list.append({"Barang": item_nama, "Harga": item_harga})
+                        st.rerun()
+                    else:
+                        st.error("Isi nama barang dan harganya!")
+        else:
+            # Tampilan jika saldo Rp0
+            st.warning("⚠️ **Saldo Anda sudah habis (Rp0).** Anda tidak dapat menambah daftar belanja lagi.")
+            st.info("Silakan hubungi Manager jika memerlukan penambahan modal operasional.")
 
 # --- MENU 3: LIHAT SALDO PERSONAL ---
 elif choice == "Lihat Saldo Personal":
