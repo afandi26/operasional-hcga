@@ -56,31 +56,45 @@ if choice == "Dashboard Manager":
 
     st.write("---")
     
-    # 2. Fitur Verifikasi, Edit, dan Hapus
+    # 2. Fitur Verifikasi Berkelompok (Disederhanakan)
     pending_df = df[df["Status"] == "Pending"]
     if not pending_df.empty:
-        st.subheader("📩 Laporan Perlu Verifikasi")
-        for index, row in pending_df.iterrows():
-            with st.expander(f"📄 Laporan: {row['PIC']} - {row['Keperluan']} (Rp{row['Harga_Satuan']:,})", expanded=True):
-                col1, col2 = st.columns([2, 1])
-                new_keperluan = col1.text_input("Edit Keperluan", value=row['Keperluan'], key=f"edit_kep_{index}")
-                new_harga = col2.number_input("Edit Harga (Rp)", value=int(row['Harga_Satuan']), step=1000, key=f"edit_hrg_{index}")
+        st.subheader("📩 Laporan Perlu Verifikasi (Group by Nama)")
+        
+        # Kelompokkan berdasarkan PIC
+        for pic, group in pending_df.groupby("PIC"):
+            # Hitung saldo saat ini untuk PIC tersebut
+            user_all_data = df[df["PIC"] == pic]
+            modal_pic = user_all_data[user_all_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
+            belanja_pic = user_all_data[user_all_data["Status"] == "Approved"]["Harga_Satuan"].sum()
+            saldo_skrg = modal_pic - belanja_pic
+            total_pengajuan = group["Harga_Satuan"].sum()
+
+            with st.expander(f"👤 PIC: {pic} | Total Pengajuan: Rp{total_pengajuan:,} | Sisa Saldo: Rp{saldo_skrg:,}", expanded=True):
+                st.write("**Daftar Pengajuan:**")
                 
-                btn_col1, btn_col2, btn_col3 = st.columns(3)
-                if btn_col1.button(f"✅ Approve", key=f"app_{index}"):
-                    df.at[index, "Keperluan"] = new_keperluan
-                    df.at[index, "Harga_Satuan"] = new_harga
-                    df.at[index, "Status"] = "Approved"
-                    df.to_csv(DB_FILE, index=False)
-                    st.rerun()
-                
-                if btn_col2.button(f"🗑️ Hapus", key=f"del_{index}"):
-                    df = df.drop(index)
-                    df.to_csv(DB_FILE, index=False)
-                    st.rerun()
+                # Tampilkan tabel pengajuan agar lebih ringkas
+                for idx, row in group.iterrows():
+                    col_item, col_price, col_action = st.columns([3, 2, 2])
+                    col_item.text(f"• {row['Keperluan']}")
+                    col_price.text(f"Rp{row['Harga_Satuan']:,}")
                     
-                if btn_col3.button(f"❌ Reject", key=f"rej_{index}"):
-                    df.at[index, "Status"] = "Rejected"
+                    # Tombol aksi per item
+                    if col_action.button("🗑️ Hapus", key=f"del_{idx}"):
+                        df = df.drop(idx)
+                        df.to_csv(DB_FILE, index=False)
+                        st.rerun()
+
+                st.write("---")
+                c_app, c_rej = st.columns(2)
+                if c_app.button(f"✅ Approve Semua Laporan {pic}", key=f"app_all_{pic}"):
+                    df.loc[group.index, "Status"] = "Approved"
+                    df.to_csv(DB_FILE, index=False)
+                    st.success(f"Semua laporan {pic} disetujui!")
+                    st.rerun()
+                
+                if c_rej.button(f"❌ Reject Semua Laporan {pic}", key=f"rej_all_{pic}"):
+                    df.loc[group.index, "Status"] = "Rejected"
                     df.to_csv(DB_FILE, index=False)
                     st.rerun()
     else:
@@ -89,7 +103,6 @@ if choice == "Dashboard Manager":
 # --- MENU 2: INPUT TIM ---
 elif choice == "Input Laporan Tim":
     st.subheader("📝 Form Laporan Pengeluaran")
-    
     nama_user = st.text_input("Ketik Nama Anda:", key="input_nama_user").strip().title()
     
     if 'items_list' not in st.session_state:
@@ -103,9 +116,7 @@ elif choice == "Input Laporan Tim":
         
         st.success(f"💰 Saldo Anda (**{nama_user}**) saat ini: **Rp{saldo_user:,}**")
 
-        # Fitur Refund
         with st.expander("🔄 Kembalikan Sisa Saldo (Refund)", expanded=False):
-            st.write(f"Saldo: **Rp{saldo_user:,}**")
             jumlah_refund = st.number_input("Jumlah Refund (Rp)", min_value=0, max_value=int(saldo_user) if saldo_user > 0 else 0)
             alasan_refund = st.text_input("Catatan Refund")
             if st.button("Proses Refund"):
@@ -115,7 +126,6 @@ elif choice == "Input Laporan Tim":
                     df.to_csv(DB_FILE, index=False)
                     st.rerun()
 
-        # Form Tambah Belanja (Hanya muncul jika saldo > 0)
         st.write("### ➕ Tambah Belanja Baru")
         if saldo_user > 0:
             with st.form("form_tambah_barang", clear_on_submit=True):
@@ -127,9 +137,8 @@ elif choice == "Input Laporan Tim":
                         st.session_state.items_list.append({"Barang": item_nama, "Harga": item_harga})
                         st.rerun()
         else:
-            st.warning("⚠️ Saldo Rp0. Tidak bisa menambah belanja.")
+            st.warning("⚠️ Saldo Rp0.")
 
-        # Tampilkan Daftar Belanja Sementara
         if st.session_state.items_list:
             st.write("### 🛒 Daftar Belanja (Belum Terkirim)")
             total_skrg = 0
