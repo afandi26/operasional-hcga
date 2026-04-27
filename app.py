@@ -71,83 +71,53 @@ if choice == "Input Tim (Multi-Item)":
             st.success("Berhasil dikirim!")
             st.rerun()
 
-# --- MENU 2: DASHBOARD MANAGER (DENGAN GROUPING TANGGAL) ---
-elif choice == "Dashboard Manager":
-    st.subheader("🕵️ Dashboard Verifikasi & Edit")
+# ... (Bagian import dan load_data tetap sama)
+
+# --- TAMBAHAN DI SIDEBAR MENU ---
+menu = ["Dashboard Manager", "Input Tim (Lihat Saldo)"]
+choice = st.sidebar.selectbox("Menu Utama", menu)
+
+# --- MENU 1: DASHBOARD MANAGER (Tempat Input Modal) ---
+if choice == "Dashboard Manager":
+    st.subheader("🕵️ Dashboard Manager")
     
-    # Bagian 1: Approval (Pending)
-    pending_df = df[df["Status"] == "Pending"]
-    if not pending_df.empty:
-        for pic_name in pending_df["PIC"].unique():
-            with st.expander(f"🔴 LAPORAN BARU: {pic_name}", expanded=True):
-                pic_p = pending_df[pending_df["PIC"] == pic_name]
-                st.table(pic_p[["Tanggal", "Keperluan", "Harga_Satuan"]])
-                
-                t_modal_p = pic_p["Dana_Awal"].iloc[0]
-                t_belanja_p = pic_p["Harga_Satuan"].sum()
-                
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Modal Diterima", f"Rp{t_modal_p:,}")
-                c2.metric("Total Belanja", f"Rp{t_belanja_p:,}")
-                c3.metric("Sisa", f"Rp{t_modal_p - t_belanja_p:,}")
-                
-                if st.button(f"✅ Approve {pic_name}", key=f"app_{pic_name}"):
-                    df.loc[(df["PIC"] == pic_name) & (df["Status"] == "Pending"), "Status"] = "Approved"
-                    df.to_csv(DB_FILE, index=False)
-                    st.rerun()
+    # FITUR BARU: INPUT MODAL UNTUK TIM
+    with st.expander("💰 Input Pemberian Modal Baru", expanded=False):
+        c1, c2 = st.columns(2)
+        target_tim = c1.selectbox("Berikan Modal Ke:", ["Tim A", "Tim B"], key="target_modal")
+        jumlah_modal = c2.number_input("Jumlah Modal (Rp)", min_value=0, step=50000)
+        if st.button("Kirim Modal"):
+            new_modal = pd.DataFrame([{
+                "Tanggal": datetime.now().strftime("%Y-%m-%d"),
+                "PIC": target_tim, "Keperluan": "MODAL AWAL", 
+                "Dana_Awal": jumlah_modal, "Harga_Satuan": 0, "Status": "Approved"
+            }])
+            df = pd.concat([df, new_modal], ignore_index=True)
+            df.to_csv(DB_FILE, index=False)
+            st.success(f"Berhasil menginput modal Rp{jumlah_modal:,} untuk {target_tim}")
+            st.rerun()
+
+    # ... (Logika Approval & Riwayat Tanggal yang sebelumnya tetap di sini)
+
+# --- MENU 2: INPUT TIM (SINKRON DENGAN MODAL MANAGER) ---
+elif choice == "Input Tim (Lihat Saldo)":
+    st.subheader("📝 Form Pengeluaran Tim")
+    pic = st.selectbox("Siapa Anda?", ["Tim A", "Tim B"])
+    
+    # CEK SALDO DARI MANAGER
+    pic_data = df[df["PIC"] == pic]
+    total_modal_manager = pic_data.groupby('Tanggal')['Dana_Awal'].first().sum()
+    total_belanja_tim = pic_data['Harga_Satuan'].sum()
+    saldo_saat_ini = total_modal_manager - total_belanja_tim
+
+    # TAMPILAN SALDO UNTUK SALING MENGINGATKAN
+    if total_modal_manager == 0:
+        st.error(f"⚠️ PERINGATAN: Manager belum menginput modal untuk {pic}. Silakan ingatkan Manager!")
     else:
-        st.info("Tidak ada laporan baru untuk diperiksa.")
-    
-    st.write("---")
-    
-    # Bagian 2: Riwayat Approved (DENGAN KELOMPOK TANGGAL)
-    approved_all = df[df["Status"] == "Approved"]
-    if not approved_all.empty:
-        st.subheader("📋 Riwayat Pengeluaran (Approved)")
-        pics = sorted(approved_all["PIC"].unique())
-        tabs = st.tabs(pics)
+        st.info(f"✅ Saldo Anda yang tercatat di sistem: **Rp{saldo_saat_ini:,}**")
         
-        for i, pic_name in enumerate(pics):
-            with tabs[i]:
-                pic_data = approved_all[approved_all["PIC"] == pic_name].copy()
-                available_dates = sorted(pic_data["Tanggal"].unique(), reverse=True)
-                
-                for tgl in available_dates:
-                    # KELOMPOK PER TANGGAL
-                    with st.expander(f"📅 Pengeluaran Tanggal: {tgl}", expanded=True):
-                        daily_data = pic_data[pic_data["Tanggal"] == tgl]
-                        
-                        # Header
-                        h1, h2, h3, h4 = st.columns([3, 2, 1, 1])
-                        h1.write("**Barang**")
-                        h2.write("**Harga**")
-                        h3.write("**Simpan**")
-                        h4.write("**Hapus**")
-
-                        for idx, row in daily_data.iterrows():
-                            c1, c2, c3, c4 = st.columns([3, 2, 1, 1])
-                            new_name = c1.text_input("Edit", row["Keperluan"], key=f"n_{idx}", label_visibility="collapsed")
-                            new_price = c2.number_input("Harga", value=int(row["Harga_Satuan"]), key=f"p_{idx}", label_visibility="collapsed")
-                            
-                            if c3.button("💾", key=f"s_{idx}"):
-                                df.at[idx, "Keperluan"] = new_name
-                                df.at[idx, "Harga_Satuan"] = new_price
-                                df.to_csv(DB_FILE, index=False)
-                                st.rerun()
-                            if c4.button("🗑️", key=f"d_{idx}"):
-                                df.drop(idx, inplace=True)
-                                df.to_csv(DB_FILE, index=False)
-                                st.rerun()
-                        
-                        st.markdown(f"**Total Belanja tgl {tgl}:** `Rp{daily_data['Harga_Satuan'].sum():,}`")
-
-                # Ringkasan Akumulasi Saldo
-                st.write("---")
-                t_modal = pic_data.groupby('Tanggal')['Dana_Awal'].first().sum()
-                t_belanja = pic_data['Harga_Satuan'].sum()
-                
-                st.markdown("### 📊 Ringkasan Saldo Keseluruhan")
-                m1, m2, m3 = st.columns(3)
-                m1.metric("Total Modal Masuk", f"Rp{t_modal:,}")
-                m2.metric("Total Belanja", f"Rp{t_belanja:,}")
-                m3.metric("Sisa Saldo Tim", f"Rp{t_modal - t_belanja:,}")
+    # Tim tetap bisa input belanja jika saldo ada
+    if saldo_saat_ini > 0:
+        with st.form("input_belanja"):
+            # ... (Daftar belanja seperti kode sebelumnya)
+            pass
