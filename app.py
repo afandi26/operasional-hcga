@@ -33,7 +33,6 @@ choice = st.sidebar.selectbox("Menu Utama", menu)
 if choice == "Dashboard Manager":
     st.subheader("🕵️ Dashboard Manager")
     
-    # 1. Fitur Input Modal
     with st.expander("💰 Input Pemberian Modal Baru", expanded=False):
         c1, c2 = st.columns(2)
         target_nama = c1.text_input("Berikan Modal Ke Nama:")
@@ -56,30 +55,33 @@ if choice == "Dashboard Manager":
 
     st.write("---")
     
-    # 2. Fitur Verifikasi Berkelompok (Disederhanakan)
     pending_df = df[df["Status"] == "Pending"]
     if not pending_df.empty:
         st.subheader("📩 Laporan Perlu Verifikasi (Group by Nama)")
         
-        # Kelompokkan berdasarkan PIC
         for pic, group in pending_df.groupby("PIC"):
-            # Hitung saldo saat ini untuk PIC tersebut
+            # LOGIKA PERBAIKAN SALDO:
             user_all_data = df[df["PIC"] == pic]
-            modal_pic = user_all_data[user_all_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
-            belanja_pic = user_all_data[user_all_data["Status"] == "Approved"]["Harga_Satuan"].sum()
-            saldo_skrg = modal_pic - belanja_pic
-            total_pengajuan = group["Harga_Satuan"].sum()
+            total_modal_pic = user_all_data[user_all_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
+            
+            # Belanja yang sudah disetujui sebelumnya
+            belanja_approved_lama = user_all_data[user_all_data["Status"] == "Approved"]["Harga_Satuan"].sum()
+            
+            # Total pengajuan yang sedang diperiksa sekarang
+            total_pengajuan_skrg = group["Harga_Satuan"].sum()
+            
+            # Estimasi sisa saldo jika semua di-approve
+            estimasi_saldo_akhir = total_modal_pic - (belanja_approved_lama + total_pengajuan_skrg)
 
-            with st.expander(f"👤 PIC: {pic} | Total Pengajuan: Rp{total_pengajuan:,} | Sisa Saldo: Rp{saldo_skrg:,}", expanded=True):
+            with st.expander(f"👤 PIC: {pic} | Total Pengajuan: Rp{total_pengajuan_skrg:,} | Estimasi Sisa Saldo: Rp{estimasi_saldo_akhir:,}", expanded=True):
+                st.info(f"Jika laporan ini disetujui, sisa uang di tangan {pic} menjadi **Rp{estimasi_saldo_akhir:,}**")
                 st.write("**Daftar Pengajuan:**")
                 
-                # Tampilkan tabel pengajuan agar lebih ringkas
                 for idx, row in group.iterrows():
                     col_item, col_price, col_action = st.columns([3, 2, 2])
                     col_item.text(f"• {row['Keperluan']}")
                     col_price.text(f"Rp{row['Harga_Satuan']:,}")
                     
-                    # Tombol aksi per item
                     if col_action.button("🗑️ Hapus", key=f"del_{idx}"):
                         df = df.drop(idx)
                         df.to_csv(DB_FILE, index=False)
@@ -111,20 +113,13 @@ elif choice == "Input Laporan Tim":
     if nama_user:
         user_data = df[df["PIC"] == nama_user]
         modal_user = user_data[user_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
-        belanja_user = user_data[user_data["Status"] == "Approved"]["Harga_Satuan"].sum()
-        saldo_user = modal_user - belanja_user
         
-        st.success(f"💰 Saldo Anda (**{nama_user}**) saat ini: **Rp{saldo_user:,}**")
-
-        with st.expander("🔄 Kembalikan Sisa Saldo (Refund)", expanded=False):
-            jumlah_refund = st.number_input("Jumlah Refund (Rp)", min_value=0, max_value=int(saldo_user) if saldo_user > 0 else 0)
-            alasan_refund = st.text_input("Catatan Refund")
-            if st.button("Proses Refund"):
-                if jumlah_refund > 0:
-                    refund_row = pd.DataFrame([{"Tanggal": datetime.now().strftime("%Y-%m-%d"), "PIC": nama_user, "Keperluan": f"REFUND: {alasan_refund}", "Dana_Awal": 0, "Harga_Satuan": jumlah_refund, "Status": "Approved"}])
-                    df = pd.concat([df, refund_row], ignore_index=True)
-                    df.to_csv(DB_FILE, index=False)
-                    st.rerun()
+        # Di sisi user, kita tampilkan saldo real (yang sudah approved + sedang pending) 
+        # agar mereka tidak belanja melebihi modal yang ada
+        belanja_total = user_data[user_data["Status"].isin(["Approved", "Pending"])]["Harga_Satuan"].sum()
+        saldo_user = modal_user - belanja_total
+        
+        st.success(f"💰 Sisa Saldo Tersedia untuk Belanja (**{nama_user}**): **Rp{saldo_user:,}**")
 
         st.write("### ➕ Tambah Belanja Baru")
         if saldo_user > 0:
@@ -137,7 +132,7 @@ elif choice == "Input Laporan Tim":
                         st.session_state.items_list.append({"Barang": item_nama, "Harga": item_harga})
                         st.rerun()
         else:
-            st.warning("⚠️ Saldo Rp0.")
+            st.warning("⚠️ Saldo tidak mencukupi untuk belanja baru.")
 
         if st.session_state.items_list:
             st.write("### 🛒 Daftar Belanja (Belum Terkirim)")
@@ -165,5 +160,5 @@ elif choice == "Lihat Saldo Personal":
         pic_data = df[df["PIC"] == pic]
         total_modal = pic_data[pic_data["Keperluan"] == "MODAL AWAL"]["Dana_Awal"].sum()
         total_belanja = pic_data[pic_data["Status"] == "Approved"]["Harga_Satuan"].sum()
-        st.metric("Saldo Tersisa", f"Rp{total_modal - total_belanja:,}")
+        st.metric("Saldo Resmi (Approved)", f"Rp{total_modal - total_belanja:,}")
         st.dataframe(pic_data[["Tanggal", "Keperluan", "Harga_Satuan", "Status"]], use_container_width=True)
